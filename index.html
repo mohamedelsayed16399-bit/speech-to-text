@@ -210,6 +210,17 @@ function updateCount() {
 }
 output.addEventListener('input', ()=>{ updateCount(); scheduleSave(); });
 
+// keep the screen awake while recording or converting a file (phone sleep kills both)
+let wlock=null,wcount=0;
+async function keepAwake(on){
+  try{
+    if(on){ wcount++; if(!wlock && navigator.wakeLock){ wlock=await navigator.wakeLock.request('screen'); wlock.addEventListener('release',()=>{wlock=null}); } }
+    else { wcount=Math.max(0,wcount-1); if(!wcount && wlock){ await wlock.release(); wlock=null; } }
+  }catch(_){}
+}
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden && wcount>0 && !wlock && navigator.wakeLock){ navigator.wakeLock.request('screen').then(l=>{wlock=l;l.addEventListener('release',()=>{wlock=null})}).catch(()=>{}); } });
+window.addEventListener('beforeunload',(e)=>{ if(busy){ e.preventDefault(); e.returnValue=''; } });
+window.__wl={get count(){return wcount}};
 // ---------- 1) Live dictation: Web Speech API ----------
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, recording = false, finalBefore = '';
@@ -253,10 +264,10 @@ if (!SR) {
 
   micBtn.addEventListener('click', () => {
     if (recording) {
-      recording = false;
+      recording = false; keepAwake(false);
       rec.stop();
     } else {
-      recording = true;
+      recording = true; keepAwake(true);
       finalBefore = output.value;
       try {
         rec.start();
@@ -303,7 +314,8 @@ async function getTranscriber(modelId) {
 
 async function transcribeFile(file) {
   if (busy) { showToast('لسه شغال على ملف، استنى'); return; }
-  busy = true;
+  busy = true; keepAwake(true);
+  const tw0=Date.now(); const tw=setInterval(()=>{ if(!busy){clearInterval(tw);return;} const s=Math.floor((Date.now()-tw0)/1000); if(/بيحوّل|بيقرأ/.test(fileStatus.textContent)) fileStatus.textContent=(fileStatus.textContent.replace(/ ⏱.*$/,''))+' ⏱ '+Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); },1000);
   progressWrap.style.display = 'block';
   barFill.style.width = '0%';
   try {
@@ -335,7 +347,7 @@ async function transcribeFile(file) {
     console.error(err);
     fileStatus.textContent = (navigator.onLine ? 'معرفتش أحوّل الملف ده — جرّب ملف تاني أو متصفح كروم' : 'مفيش نت — أول مرة لازم نت عشان يتحمّل النموذج');
   } finally {
-    busy = false;
+    busy = false; keepAwake(false);
   }
 }
 
@@ -403,4 +415,5 @@ $('fixBtn').addEventListener('click',()=>{ let t=output.value; t=t.replace(/[ \t
 </script>
 </body>
 </html>
+
 
