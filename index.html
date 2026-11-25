@@ -91,6 +91,11 @@
   .btn.primary:hover { background: #3f7bef; }
   .btn:disabled { opacity: .45; cursor: not-allowed; }
   #count { color: var(--muted); font-size: 0.8rem; margin-top: 8px; }
+  .tools { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; font-size:.85rem; color:var(--muted); }
+  #timer { font-variant-numeric: tabular-nums; color: var(--danger); font-weight: bold; min-height:1.2em; }
+  .btn.sm { padding:6px 10px; font-size:.8rem; }
+  .hist { border-top:1px solid var(--border); padding:8px 0; font-size:.85rem; display:flex; gap:8px; align-items:center; }
+  .hist span { flex:1; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   footer { text-align: center; color: var(--muted); font-size: 0.78rem; margin: 18px 0 30px; line-height: 1.8; }
   .toast {
     position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
@@ -112,7 +117,10 @@
     <p class="hint">دوس على الميكروفون واتكلم، والكلام هيظهر مكتوب على طول</p>
     <div class="mic-row">
       <button id="micBtn" title="ابدأ التسجيل">🎤</button>
+      <div id="timer"></div>
       <div id="micStatus">جاهز</div>
+      <div class="row"><label for="langSel" style="color:var(--muted);font-size:.85rem">لغة الكلام:</label>
+      <select id="langSel"><option value="ar-EG">عربي مصري</option><option value="ar-SA">عربي فصحى / خليجي</option><option value="en-US">English</option></select></div>
       <div id="interim"></div>
     </div>
   </div>
@@ -126,6 +134,8 @@
       <input type="file" id="fileInput" accept="audio/*" hidden>
     </div>
     <div class="row" style="margin-top:12px">
+      <label for="fLang" style="color:var(--muted);font-size:.85rem">لغة الملف:</label>
+      <select id="fLang"><option value="arabic">عربي</option><option value="english">English</option></select>
       <label for="modelSel" style="color:var(--muted);font-size:.85rem">الجودة:</label>
       <select id="modelSel">
         <option value="onnx-community/whisper-base">سريع (كويس لأغلب الكلام)</option>
@@ -147,6 +157,16 @@
       <button class="btn" id="shareBtn">📤 مشاركة</button>
       <button class="btn" id="dlBtn">💾 تحميل ملف</button>
       <button class="btn" id="clearBtn">🗑️ مسح</button>
+      <button class="btn" id="undoBtn" style="display:none">↩️ رجّع اللي اتمسح</button>
+    </div>
+    <div class="tools">
+      <span>حجم الخط:</span>
+      <button class="btn sm" id="fMinus">أ-</button><button class="btn sm" id="fPlus">أ+</button>
+      <button class="btn sm" id="fixBtn" title="يمسح المسافات الزيادة ويضيف علامات الترقيم">✨ نضّف النص</button>
+      <span id="saved" style="margin-inline-start:auto"></span>
+    </div>
+    <div class="card" style="margin:14px 0 0;padding:12px;display:none" id="histCard">
+      <h2 style="font-size:.95rem">🕘 آخر النصوص المحفوظة</h2><div id="hist"></div>
     </div>
   </div>
 
@@ -164,6 +184,19 @@ const micBtn = $('micBtn'), micStatus = $('micStatus'), interimEl = $('interim')
 const drop = $('drop'), fileInput = $('fileInput'), modelSel = $('modelSel');
 const progressWrap = $('progressWrap'), barFill = $('barFill'), fileStatus = $('fileStatus');
 const output = $('output'), count = $('count'), toast = $('toast');
+const langSel = $('langSel'), timerEl = $('timer'), fLang = $('fLang');
+let tInt = null, tStart = 0;
+function startTimer(){ tStart = Date.now(); clearInterval(tInt); const f=()=>{ const s=Math.floor((Date.now()-tStart)/1000); timerEl.textContent='⏺ '+String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); }; f(); tInt=setInterval(f,500); }
+function stopTimer(){ clearInterval(tInt); timerEl.textContent=''; }
+// autosave
+const LS='kalami_text', HK='kalami_hist';
+let saveT=null;
+function saveNow(){ try{ localStorage.setItem(LS, output.value); const sv=document.getElementById('saved'); if(sv){ sv.textContent='💾 اتحفظ'; setTimeout(()=>sv.textContent='',1200);} }catch(_){} }
+function scheduleSave(){ clearTimeout(saveT); saveT=setTimeout(saveNow,600); }
+function loadHist(){ try{ return JSON.parse(localStorage.getItem(HK)||'[]'); }catch(_){ return []; } }
+function pushHist(t){ t=(t||'').trim(); if(!t) return; let h=loadHist().filter(x=>x.t!==t); h.unshift({t,d:Date.now()}); h=h.slice(0,5); try{ localStorage.setItem(HK,JSON.stringify(h)); }catch(_){} renderHist(); }
+function renderHist(){ const h=loadHist(), box=document.getElementById('hist'); document.getElementById('histCard').style.display=h.length?'block':'none'; box.innerHTML=''; h.forEach((x,i)=>{ const r=document.createElement('div'); r.className='hist'; const sp=document.createElement('span'); sp.textContent=new Date(x.d).toLocaleString('ar-EG',{hour:'2-digit',minute:'2-digit',day:'numeric',month:'short'})+' — '+x.t.slice(0,60); const b=document.createElement('button'); b.className='btn sm'; b.textContent='افتح'; b.onclick=()=>{ output.value=x.t; updateCount(); saveNow(); }; r.append(sp,b); box.appendChild(r); }); }
+
 
 function showToast(msg) {
   toast.textContent = msg;
@@ -175,7 +208,7 @@ function updateCount() {
   const words = t ? t.split(/\s+/).length : 0;
   count.textContent = `${words} كلمة · ${t.length} حرف`;
 }
-output.addEventListener('input', updateCount);
+output.addEventListener('input', ()=>{ updateCount(); scheduleSave(); });
 
 // ---------- 1) Live dictation: Web Speech API ----------
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -186,7 +219,8 @@ if (!SR) {
   micStatus.textContent = 'المتصفح ده مش بيدعم الكلام المباشر — جرّب كروم، أو استخدم رفع الملف تحت';
 } else {
   rec = new SR();
-  rec.lang = 'ar-EG';
+  rec.lang = localStorage.getItem('kn_lang') || 'ar-EG'; langSel.value = rec.lang;
+  langSel.addEventListener('change',()=>{ rec.lang = langSel.value; localStorage.setItem('kn_lang',rec.lang); if(recording){ try{rec.stop();}catch(_){} } });
   rec.continuous = true;
   rec.interimResults = true;
 
@@ -212,7 +246,7 @@ if (!SR) {
   rec.onend = () => {
     if (recording) { try { rec.start(); } catch (_) {} return; } // keep alive across pauses
     micBtn.classList.remove('recording');
-    micBtn.textContent = '🎤';
+    micBtn.textContent = '🎤'; stopTimer(); saveNow();
     micStatus.textContent = 'جاهز';
     interimEl.textContent = '';
   };
@@ -228,7 +262,7 @@ if (!SR) {
         rec.start();
         micBtn.classList.add('recording');
         micBtn.textContent = '⏹️';
-        micStatus.textContent = 'بتسمعك... اتكلم';
+        micStatus.textContent = 'بتسمعك... اتكلم'; startTimer();
       } catch (_) {}
     }
   });
@@ -238,7 +272,7 @@ function appendText(t) {
   if (!t) return;
   const cur = output.value;
   output.value = cur && !cur.endsWith('\n') && !cur.endsWith(' ') ? cur + ' ' + t : cur + t;
-  updateCount();
+  updateCount(); scheduleSave();
   output.scrollTop = output.scrollHeight;
 }
 
@@ -250,16 +284,17 @@ async function getTranscriber(modelId) {
   if (loadingModel) throw new Error('النموذج بيتحمّل دلوقتي، استنى لحظة');
   loadingModel = true;
   fileStatus.textContent = 'بيحمّل نموذج التحويل (أول مرة بس)...';
-  const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2');
+  let pipeline, env;
+  try { ({ pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2')); } catch(e){ loadingModel=false; throw e; }
   env.allowLocalModels = false;
-  const pipe = await pipeline('automatic-speech-recognition', modelId, {
+  let pipe; try { pipe = await pipeline('automatic-speech-recognition', modelId, {
     progress_callback: (p) => {
       if (p.status === 'progress' && p.file && p.file.endsWith('.onnx_data')) {
         barFill.style.width = Math.round(p.progress) + '%';
         fileStatus.textContent = `بيحمّل النموذج... ${Math.round(p.progress)}%`;
       }
     }
-  });
+  }); } catch(e){ loadingModel=false; throw e; }
   pipe._modelId = modelId;
   transcriber = pipe;
   loadingModel = false;
@@ -282,22 +317,23 @@ async function transcribeFile(file) {
     const ctx = new AC({ sampleRate: 16000 });
     const audioBuf = await ctx.decodeAudioData(arrayBuf);
     let audio = audioBuf.getChannelData(0);
+    if (audioBuf.numberOfChannels > 1) { const c1 = audioBuf.getChannelData(1); const m = new Float32Array(audio.length); for (let i=0;i<m.length;i++) m[i]=(audio[i]+c1[i])/2; audio = m; }
     await ctx.close();
 
     const t0 = performance.now();
     const res = await pipe(audio, {
-      language: 'arabic',
+      language: fLang.value,
       task: 'transcribe',
       chunk_length_s: 30,
       stride_length_s: 5
     });
     const secs = ((performance.now() - t0) / 1000).toFixed(1);
-    appendText(res.text.trim());
+    appendText(res.text.trim()); pushHist(output.value);
     fileStatus.textContent = `خلص في ${secs} ثانية ✅ (${file.name})`;
     showToast('النص جاهز');
   } catch (err) {
     console.error(err);
-    fileStatus.textContent = 'معرفتش أحوّل الملف ده — جرّب ملف تاني أو متصفح كروم';
+    fileStatus.textContent = (navigator.onLine ? 'معرفتش أحوّل الملف ده — جرّب ملف تاني أو متصفح كروم' : 'مفيش نت — أول مرة لازم نت عشان يتحمّل النموذج');
   } finally {
     busy = false;
   }
@@ -338,16 +374,33 @@ $('dlBtn').addEventListener('click', () => {
   const blob = new Blob([output.value], { type: 'text/plain;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'نص.txt';
+  a.download = 'نص-' + new Date().toISOString().slice(0,10) + '.txt';
   a.click();
   URL.revokeObjectURL(a.href);
 });
+let lastCleared='';
 $('clearBtn').addEventListener('click', () => {
-  output.value = '';
+  if (output.value.trim()) { lastCleared = output.value; pushHist(lastCleared); $('undoBtn').style.display='inline-block'; }
+  output.value = ''; saveNow();
   updateCount();
   interimEl.textContent = '';
 });
 updateCount();
+$('undoBtn').addEventListener('click',()=>{ output.value=lastCleared; $('undoBtn').style.display='none'; updateCount(); saveNow(); });
+// restore
+try{ const t=localStorage.getItem(LS); if(t){ output.value=t; updateCount(); } }catch(_){}
+renderHist();
+// font size
+let fs=parseFloat(localStorage.getItem('kn_fs')||'1.05');
+function applyFs(){ output.style.fontSize=fs+'rem'; localStorage.setItem('kn_fs',fs); }
+$('fMinus').onclick=()=>{ fs=Math.max(.8,fs-.15); applyFs(); };
+$('fPlus').onclick=()=>{ fs=Math.min(2.2,fs+.15); applyFs(); };
+applyFs();
+// clean text
+$('fixBtn').addEventListener('click',()=>{ let t=output.value; t=t.replace(/[ \t]+/g,' ').replace(/ *\n */g,'\n').replace(/\s+([،,.!?؟])/g,'$1').trim(); if(t&&!/[.!?؟]$/.test(t)) t+='.'; output.value=t; updateCount(); saveNow(); showToast('النص اتنضّف ✨'); });
+// download name with date
+// share/download stays
 </script>
 </body>
 </html>
+
