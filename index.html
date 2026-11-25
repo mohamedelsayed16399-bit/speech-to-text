@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>كلامي نص — تحويل الكلام والريكورد لكتابة</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --card2: #1e222b;
+    --text: #eef1f6;
+    --muted: #9aa3b2;
+    --accent: #4f8cff;
+    --accent2: #22c55e;
+    --danger: #ef4444;
+    --border: #2a2f3a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 16px;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  header { text-align: center; margin: 18px 0 22px; }
+  header h1 { font-size: 1.7rem; margin-bottom: 6px; }
+  header p { color: var(--muted); font-size: 0.95rem; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+  .card h2 { font-size: 1.1rem; margin-bottom: 4px; }
+  .card .hint { color: var(--muted); font-size: 0.85rem; margin-bottom: 14px; }
+  .mic-row { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  #micBtn {
+    width: 96px; height: 96px; border-radius: 50%;
+    border: none; cursor: pointer;
+    background: var(--accent); color: #fff;
+    font-size: 2.2rem;
+    transition: transform .1s, background .2s;
+    box-shadow: 0 4px 24px rgba(79,140,255,.35);
+  }
+  #micBtn:active { transform: scale(.94); }
+  #micBtn.recording { background: var(--danger); animation: pulse 1.2s infinite; }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(239,68,68,.5); }
+    70% { box-shadow: 0 0 0 22px rgba(239,68,68,0); }
+    100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+  }
+  #micStatus { color: var(--muted); font-size: 0.9rem; min-height: 1.2em; text-align: center; }
+  #interim { color: var(--muted); font-style: italic; margin-top: 10px; min-height: 1.4em; text-align: center; width: 100%; }
+  .drop {
+    border: 2px dashed var(--border); border-radius: 12px;
+    padding: 26px 14px; text-align: center; color: var(--muted);
+    cursor: pointer; transition: border-color .2s, background .2s;
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); background: var(--card2); color: var(--text); }
+  .drop .big { font-size: 1.6rem; display: block; margin-bottom: 6px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  select {
+    background: var(--card2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-family: inherit; font-size: 0.9rem;
+  }
+  .progress-wrap { margin-top: 14px; display: none; }
+  .bar { background: var(--card2); border-radius: 8px; height: 10px; overflow: hidden; }
+  .bar > div { background: var(--accent); height: 100%; width: 0%; transition: width .2s; }
+  #fileStatus { color: var(--muted); font-size: 0.85rem; margin-top: 8px; }
+  #output {
+    width: 100%; min-height: 180px;
+    background: var(--card2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px; font-family: inherit; font-size: 1.05rem; line-height: 1.9;
+    resize: vertical;
+  }
+  .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .btn {
+    background: var(--card2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 16px; font-family: inherit; font-size: 0.9rem;
+    cursor: pointer; transition: background .15s;
+  }
+  .btn:hover { background: #262b36; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: #3f7bef; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  #count { color: var(--muted); font-size: 0.8rem; margin-top: 8px; }
+  footer { text-align: center; color: var(--muted); font-size: 0.78rem; margin: 18px 0 30px; line-height: 1.8; }
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--accent2); color: #06240f; font-weight: bold;
+    padding: 10px 20px; border-radius: 10px; font-size: 0.9rem;
+    display: none; z-index: 50;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🎙️ كلامي نص</h1>
+    <p>اتكلم أو ارفع ريكورد، وهو يتكتب فورًا — مجانًا ومن غير تسجيل</p>
+  </header>
+
+  <div class="card">
+    <h2>🎤 كلام مباشر</h2>
+    <p class="hint">دوس على الميكروفون واتكلم، والكلام هيظهر مكتوب على طول</p>
+    <div class="mic-row">
+      <button id="micBtn" title="ابدأ التسجيل">🎤</button>
+      <div id="micStatus">جاهز</div>
+      <div id="interim"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📁 رفع ريكورد أو ملف صوتي</h2>
+    <p class="hint">MP3 أو M4A أو WAV أو أي صوت من الموبايل — التحويل بيحصل على جهازك، الملف مش بيطلع لأي سيرفر</p>
+    <div class="drop" id="drop">
+      <span class="big">⬇️</span>
+      اختار ملف أو اسحبه هنا
+      <input type="file" id="fileInput" accept="audio/*" hidden>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label for="modelSel" style="color:var(--muted);font-size:.85rem">الجودة:</label>
+      <select id="modelSel">
+        <option value="onnx-community/whisper-base">سريع (كويس لأغلب الكلام)</option>
+        <option value="onnx-community/whisper-small">أدق (تحميل أكبر شوية)</option>
+      </select>
+    </div>
+    <div class="progress-wrap" id="progressWrap">
+      <div class="bar"><div id="barFill"></div></div>
+      <div id="fileStatus"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📝 النص</h2>
+    <textarea id="output" placeholder="النص هيظهر هنا..."></textarea>
+    <div id="count">0 كلمة · 0 حرف</div>
+    <div class="actions">
+      <button class="btn primary" id="copyBtn">📋 نسخ</button>
+      <button class="btn" id="shareBtn">📤 مشاركة</button>
+      <button class="btn" id="dlBtn">💾 تحميل ملف</button>
+      <button class="btn" id="clearBtn">🗑️ مسح</button>
+    </div>
+  </div>
+
+  <footer>
+    الكلام المباشر بيستخدم محرك المتصفح (بيحتاج نت).<br>
+    تحويل الملفات بيشتغل كله على جهازك — خصوصيتك محفوظة، وأول مرة بس بيحمّل نموذج صغير وبعدين يشتغل حتى من غير نت.
+  </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const micBtn = $('micBtn'), micStatus = $('micStatus'), interimEl = $('interim');
+const drop = $('drop'), fileInput = $('fileInput'), modelSel = $('modelSel');
+const progressWrap = $('progressWrap'), barFill = $('barFill'), fileStatus = $('fileStatus');
+const output = $('output'), count = $('count'), toast = $('toast');
+
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.style.display = 'block';
+  setTimeout(() => toast.style.display = 'none', 1800);
+}
+function updateCount() {
+  const t = output.value.trim();
+  const words = t ? t.split(/\s+/).length : 0;
+  count.textContent = `${words} كلمة · ${t.length} حرف`;
+}
+output.addEventListener('input', updateCount);
+
+// ---------- 1) Live dictation: Web Speech API ----------
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, recording = false, finalBefore = '';
+
+if (!SR) {
+  micBtn.disabled = true;
+  micStatus.textContent = 'المتصفح ده مش بيدعم الكلام المباشر — جرّب كروم، أو استخدم رفع الملف تحت';
+} else {
+  rec = new SR();
+  rec.lang = 'ar-EG';
+  rec.continuous = true;
+  rec.interimResults = true;
+
+  rec.onresult = (e) => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      if (r.isFinal) {
+        appendText(r[0].transcript.trim());
+      } else {
+        interim += r[0].transcript;
+      }
+    }
+    interimEl.textContent = interim;
+  };
+  rec.onerror = (e) => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      micStatus.textContent = 'لازم تسمح للميكروفون من إعدادات المتصفح';
+    } else if (e.error !== 'no-speech') {
+      micStatus.textContent = 'حصلت مشكلة: ' + e.error;
+    }
+  };
+  rec.onend = () => {
+    if (recording) { try { rec.start(); } catch (_) {} return; } // keep alive across pauses
+    micBtn.classList.remove('recording');
+    micBtn.textContent = '🎤';
+    micStatus.textContent = 'جاهز';
+    interimEl.textContent = '';
+  };
+
+  micBtn.addEventListener('click', () => {
+    if (recording) {
+      recording = false;
+      rec.stop();
+    } else {
+      recording = true;
+      finalBefore = output.value;
+      try {
+        rec.start();
+        micBtn.classList.add('recording');
+        micBtn.textContent = '⏹️';
+        micStatus.textContent = 'بتسمعك... اتكلم';
+      } catch (_) {}
+    }
+  });
+}
+
+function appendText(t) {
+  if (!t) return;
+  const cur = output.value;
+  output.value = cur && !cur.endsWith('\n') && !cur.endsWith(' ') ? cur + ' ' + t : cur + t;
+  updateCount();
+  output.scrollTop = output.scrollHeight;
+}
+
+// ---------- 2) File transcription: Whisper in-browser ----------
+let transcriber = null, loadingModel = false, busy = false;
+
+async function getTranscriber(modelId) {
+  if (transcriber && transcriber._modelId === modelId) return transcriber;
+  if (loadingModel) throw new Error('النموذج بيتحمّل دلوقتي، استنى لحظة');
+  loadingModel = true;
+  fileStatus.textContent = 'بيحمّل نموذج التحويل (أول مرة بس)...';
+  const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2');
+  env.allowLocalModels = false;
+  const pipe = await pipeline('automatic-speech-recognition', modelId, {
+    progress_callback: (p) => {
+      if (p.status === 'progress' && p.file && p.file.endsWith('.onnx_data')) {
+        barFill.style.width = Math.round(p.progress) + '%';
+        fileStatus.textContent = `بيحمّل النموذج... ${Math.round(p.progress)}%`;
+      }
+    }
+  });
+  pipe._modelId = modelId;
+  transcriber = pipe;
+  loadingModel = false;
+  return pipe;
+}
+
+async function transcribeFile(file) {
+  if (busy) { showToast('لسه شغال على ملف، استنى'); return; }
+  busy = true;
+  progressWrap.style.display = 'block';
+  barFill.style.width = '0%';
+  try {
+    fileStatus.textContent = 'بيقرأ الملف...';
+    const pipe = await getTranscriber(modelSel.value);
+    fileStatus.textContent = 'بيحوّل الصوت لنص...';
+    barFill.style.width = '100%';
+
+    const arrayBuf = await file.arrayBuffer();
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC({ sampleRate: 16000 });
+    const audioBuf = await ctx.decodeAudioData(arrayBuf);
+    let audio = audioBuf.getChannelData(0);
+    await ctx.close();
+
+    const t0 = performance.now();
+    const res = await pipe(audio, {
+      language: 'arabic',
+      task: 'transcribe',
+      chunk_length_s: 30,
+      stride_length_s: 5
+    });
+    const secs = ((performance.now() - t0) / 1000).toFixed(1);
+    appendText(res.text.trim());
+    fileStatus.textContent = `خلص في ${secs} ثانية ✅ (${file.name})`;
+    showToast('النص جاهز');
+  } catch (err) {
+    console.error(err);
+    fileStatus.textContent = 'معرفتش أحوّل الملف ده — جرّب ملف تاني أو متصفح كروم';
+  } finally {
+    busy = false;
+  }
+}
+
+drop.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) transcribeFile(fileInput.files[0]);
+  fileInput.value = '';
+});
+drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', (e) => {
+  e.preventDefault();
+  drop.classList.remove('over');
+  if (e.dataTransfer.files[0]) transcribeFile(e.dataTransfer.files[0]);
+});
+
+// ---------- 3) Text actions ----------
+$('copyBtn').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(output.value);
+    showToast('اتنسخ ✅');
+  } catch (_) {
+    output.select();
+    document.execCommand('copy');
+    showToast('اتنسخ ✅');
+  }
+});
+$('shareBtn').addEventListener('click', async () => {
+  if (navigator.share) {
+    try { await navigator.share({ text: output.value }); } catch (_) {}
+  } else {
+    window.open('https://wa.me/?text=' + encodeURIComponent(output.value), '_blank');
+  }
+});
+$('dlBtn').addEventListener('click', () => {
+  const blob = new Blob([output.value], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'نص.txt';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+$('clearBtn').addEventListener('click', () => {
+  output.value = '';
+  updateCount();
+  interimEl.textContent = '';
+});
+updateCount();
+</script>
+</body>
+</html>
