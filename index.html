@@ -184,7 +184,7 @@
       <span id="saved" style="margin-inline-start:auto"></span>
     </div>
     <div class="card" style="margin:14px 0 0;padding:12px;display:none" id="histCard">
-      <h2 style="font-size:.95rem">🕘 آخر النصوص المحفوظة</h2><div id="hist"></div>
+      <h2 style="font-size:.95rem">🕘 آخر النصوص المحفوظة</h2><input id="hq" placeholder="🔎 دوّر في النصوص المحفوظة..." style="width:100%;margin:6px 0;padding:8px;border-radius:10px;border:1px solid #888;background:transparent;color:inherit;font-family:inherit"><div id="hist"></div><div id="useBox"></div>
     </div>
   </div>
 
@@ -212,8 +212,17 @@ let saveT=null;
 function saveNow(){ try{ localStorage.setItem(LS, output.value); const sv=document.getElementById('saved'); if(sv){ sv.textContent='💾 اتحفظ'; setTimeout(()=>sv.textContent='',1200);} }catch(_){} }
 function scheduleSave(){ clearTimeout(saveT); saveT=setTimeout(saveNow,600); }
 function loadHist(){ try{ return JSON.parse(localStorage.getItem(HK)||'[]'); }catch(_){ return []; } }
-function pushHist(t){ t=(t||'').trim(); if(!t) return; let h=loadHist().filter(x=>x.t!==t); h.unshift({t,d:Date.now()}); h=h.slice(0,5); try{ localStorage.setItem(HK,JSON.stringify(h)); }catch(_){} renderHist(); }
-function renderHist(){ const h=loadHist(), box=document.getElementById('hist'); document.getElementById('histCard').style.display=h.length?'block':'none'; box.innerHTML=''; h.forEach((x,i)=>{ const r=document.createElement('div'); r.className='hist'; const sp=document.createElement('span'); sp.textContent=new Date(x.d).toLocaleString('ar-EG',{hour:'2-digit',minute:'2-digit',day:'numeric',month:'short'})+' — '+x.t.slice(0,60); const b=document.createElement('button'); b.className='btn sm'; b.textContent='افتح'; b.onclick=()=>{ output.value=x.t; updateCount(); saveNow(); }; r.append(sp,b); box.appendChild(r); }); }
+function pushHist(t){ t=(t||'').trim(); if(!t) return; let h=loadHist().filter(x=>x.t!==t); h.unshift({t,d:Date.now()}); h=h.slice(0,30); try{ localStorage.setItem(HK,JSON.stringify(h)); }catch(_){} trackUse(t); renderHist(); }
+function renderHist(){ const all=loadHist(), q=(document.getElementById('hq')?document.getElementById('hq').value:'').trim(), h=q?all.filter(x=>x.t.includes(q)):all, box=document.getElementById('hist'); document.getElementById('histCard').style.display=all.length?'block':'none'; box.innerHTML=''; h.forEach((x,i)=>{ const r=document.createElement('div'); r.className='hist'; const sp=document.createElement('span'); sp.textContent=new Date(x.d).toLocaleString('ar-EG',{hour:'2-digit',minute:'2-digit',day:'numeric',month:'short'})+' — '+x.t.slice(0,60); const b=document.createElement('button'); b.className='btn sm'; b.textContent='افتح'; b.onclick=()=>{ output.value=x.t; updateCount(); saveNow(); }; const cp=document.createElement('button'); cp.className='btn sm'; cp.textContent='نسخ'; cp.onclick=()=>{ try{navigator.clipboard.writeText(x.t); showToast('اتنسخ'); }catch(_){} }; const dl=document.createElement('button'); dl.className='btn sm'; dl.textContent='✕'; dl.title='احذف'; dl.onclick=()=>{ const n=loadHist().filter(y=>y.d!==x.d); try{localStorage.setItem(HK,JSON.stringify(n));}catch(_){} renderHist(); }; r.append(sp,b,cp,dl); box.appendChild(r); }); if(!h.length&&q){ box.textContent='مفيش نتايج'; } renderUse(); }
+// usage stats + achievements
+const UK='kalami_use';
+const BADGES=[['w100','١٠٠ كلمة',u=>u.words>=100],['w1k','١٠٠٠ كلمة',u=>u.words>=1000],['w10k','١٠ آلاف كلمة',u=>u.words>=10000],['t5','٥ نصوص',u=>u.texts>=5],['t30','٣٠ نص',u=>u.texts>=30],['d3','٣ أيام متتالية',u=>u.best>=3],['d7','أسبوع',u=>u.best>=7],['fx','نضّفت نص',u=>u.fix>=1]];
+function loadUse(){ try{ return Object.assign({words:0,texts:0,days:[],best:0,fix:0,ach:{}},JSON.parse(localStorage.getItem(UK)||'{}')); }catch(_){ return {words:0,texts:0,days:[],best:0,fix:0,ach:{}}; } }
+function saveUse(u){ try{ localStorage.setItem(UK,JSON.stringify(u)); }catch(_){} }
+function trackUse(t){ const u=loadUse(); u.texts++; u.words+=(t.trim()?t.trim().split(/\s+/).length:0); const d=new Date().toISOString().slice(0,10); if(!u.days.includes(d)) u.days.push(d); u.days=u.days.sort().slice(-400); let best=0,cur=0,prev=null; for(const x of u.days){ const tt=Date.parse(x); cur=(prev!==null&&Math.round((tt-prev)/864e5)===1)?cur+1:1; best=Math.max(best,cur); prev=tt; } u.best=best; for(const b of BADGES){ if(!u.ach[b[0]]&&b[2](u)){ u.ach[b[0]]=1; showToast('🏅 إنجاز جديد: '+b[1]); } } saveUse(u); }
+function renderUse(){ const el=document.getElementById('useBox'); if(!el) return; const u=loadUse(); el.innerHTML=''; const l=document.createElement('div'); l.style.cssText='font-size:.8rem;opacity:.85;margin:6px 0'; l.textContent='إجمالي: '+u.words+' كلمة · '+u.texts+' نص · أطول سلسلة أيام: '+u.best; el.appendChild(l); const w=document.createElement('div'); w.style.cssText='display:flex;flex-wrap:wrap;gap:6px'; BADGES.forEach(b=>{ const s=document.createElement('span'); const on=u.ach[b[0]]; s.style.cssText='font-size:.75rem;padding:3px 9px;border-radius:20px;border:1px solid #888;'+(on?'background:#10b98133;border-color:#10b981':'opacity:.5'); s.textContent=(on?'🏅 ':'🔒 ')+b[1]; w.appendChild(s); }); el.appendChild(w); }
+window.__st={loadUse,trackUse,BADGES};
+
 
 
 function showToast(msg) {
@@ -419,6 +428,7 @@ updateCount();
 $('undoBtn').addEventListener('click',()=>{ output.value=lastCleared; $('undoBtn').style.display='none'; updateCount(); saveNow(); });
 // restore
 try{ const t=localStorage.getItem(LS); if(t){ output.value=t; updateCount(); } }catch(_){}
+document.getElementById('hq').addEventListener('input',renderHist);
 renderHist();
 // font size
 let fs=parseFloat(localStorage.getItem('kn_fs')||'1.05');
@@ -427,7 +437,7 @@ $('fMinus').onclick=()=>{ fs=Math.max(.8,fs-.15); applyFs(); };
 $('fPlus').onclick=()=>{ fs=Math.min(2.2,fs+.15); applyFs(); };
 applyFs();
 // clean text
-$('fixBtn').addEventListener('click',()=>{ let t=output.value; t=t.replace(/[ \t]+/g,' ').replace(/ *\n */g,'\n').replace(/\s+([،,.!?؟])/g,'$1').trim(); if(t&&!/[.!?؟]$/.test(t)) t+='.'; output.value=t; updateCount(); saveNow(); showToast('النص اتنضّف ✨'); });
+$('fixBtn').addEventListener('click',()=>{ { const u=loadUse(); u.fix++; saveUse(u); trackUse(''); const uu=loadUse(); uu.texts--; saveUse(uu); renderUse(); } let t=output.value; t=t.replace(/[ \t]+/g,' ').replace(/ *\n */g,'\n').replace(/\s+([،,.!?؟])/g,'$1').trim(); if(t&&!/[.!?؟]$/.test(t)) t+='.'; output.value=t; updateCount(); saveNow(); showToast('النص اتنضّف ✨'); });
 // download name with date
 // share/download stays
 </script>
@@ -448,6 +458,7 @@ $('fixBtn').addEventListener('click',()=>{ let t=output.value; t=t.replace(/[ \t
 </script>
 </body>
 </html>
+
 
 
 
